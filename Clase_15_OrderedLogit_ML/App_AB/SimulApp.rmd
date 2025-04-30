@@ -1,0 +1,224 @@
+---
+title: "Annual Revenue Simulator"
+author: " "
+date: "2024"
+output:   
+  html_document:
+    css: styles.css
+runtime: shiny
+---
+
+```{r, echo=FALSE, out.width = "100px"}
+#install.packages('htmltools')
+htmltools::img(src = "logo.png", width = "200", 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; left:0%; padding:1px;')
+
+```
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+OLM_01 <- readRDS("OLM_01_model.rds")
+
+LOGIT_01 <- readRDS("LOGIT_01_model.rds")
+
+library(tidyverse)
+library(knitr)
+library(foreign)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(car)
+library(MASS)
+library(stargazer)
+library(lmtest)
+library(zoo)
+library(erer)
+library(lattice)
+library(caret)
+library(e1071)
+library(arsenal) 
+library(DT)
+library(scales)
+
+```
+
+
+```{r , echo=FALSE}
+
+inputPanel(
+  numericInput("Price", label = "Price (USD):",
+              value = 24.99),
+  
+  sliderInput("Score", label = "Score:",
+              min = 0, max = 10, value = 9, step = 1),
+  
+  selectInput("Followers","Followers:",
+              choices = list("Less than 50" = 1, 
+                             "More than 50, but less than 500" = 2,
+                             "More than 500" = 3), selected = 3),
+  
+  selectInput("Positive","Positive comments:",
+              choices = list("Less than 4" = 1, 
+                             "More than 4, but less than 60" = 2,
+                             "More than 60" = 3), selected = 3),
+  
+  checkboxInput("Adventure", "Adventure", value = TRUE),
+  checkboxInput("Singleplayer", "Single Player", value = TRUE),
+  checkboxInput("Story.Rich", "Story Rich", value = FALSE), 
+  checkboxInput("Horror", "Horror", value = FALSE),
+  checkboxInput("X3D", "3D", value = TRUE),
+  checkboxInput("Survival", "Survival", value = TRUE),
+  checkboxInput("Choices.Matter", "Choices Matter", value = FALSE),
+  checkboxInput("Historical", "Historical", value = FALSE),
+  checkboxInput("Mystery", "Mystery", value = FALSE),
+  checkboxInput("Replay.Value", "Replay Value", value = FALSE),
+  checkboxInput("Early.Access", "Early Access", value = TRUE),
+  checkboxInput("Female.Protagonist", "Female Protagonist", value = FALSE),
+  checkboxInput("Lovecraftian", "Lovecraftian", value = FALSE),
+  checkboxInput("Open.World", "Open World", value = TRUE),
+  checkboxInput("Multiplayer", "Multiplayer", value = TRUE),
+  checkboxInput("Co.Op", "Co-op", value = TRUE),
+  checkboxInput("Indie", "Indie", value = TRUE),
+  checkboxInput("Atmospheric", "Atmospheric", value = FALSE),
+  checkboxInput("Violent", "Violent", value = FALSE),
+  checkboxInput("Online.Co.Op", "Online Co-Op", value = TRUE),
+  checkboxInput("Third.Person", "Third person", value = TRUE),
+  checkboxInput("Sandbox", "Sandbox", value = TRUE),
+  checkboxInput("Strategy", "Strategy", value = FALSE),
+  checkboxInput("Difficult", "Difficult", value = FALSE),
+  checkboxInput("Gore", "Gore", value = FALSE),
+  checkboxInput("Soundtrack", "Soundtrack", value = FALSE),
+  checkboxInput("Great.Soundtrack", "Great Soundtrack", value = FALSE),
+  checkboxInput("Simulation", "Simulation", value = FALSE),
+  checkboxInput("RPG", "RPG", value = TRUE),
+  checkboxInput("Character.Customization", "Character Customization", value = TRUE),
+  checkboxInput("Funny", "Funny", value = FALSE),
+  checkboxInput("Sci.fi", "Sci-fi", value = FALSE),
+  checkboxInput("Exploration", "Exploration", value = FALSE),
+  checkboxInput("Action", "Action", value = TRUE),
+  checkboxInput("Sexual.Content", "Sexual Content", value = FALSE)
+)
+
+inputPanel(
+  selectInput("Model","Model:",
+              choices = list("Ordered" = 1, 
+                             "Binary" = 2),
+                            selected = 1)
+)
+
+renderText({
+    Binary <- "Binary regression is an extension of simple linear regression, where the dependent variable is dichotomous or binary in nature. Binary regression is the statistical technique used to predict the relationship between predictors and a predicted variable where the dependent variable is binary. \n \n \n"
+
+    Ordered <- "Ordered regression is a sub-type of logistic regression where the predicted variable is a category is ordered with more than two categories (or levels). \n \n \n"
+
+    ifelse(input$Model == 1, Ordered, Binary)
+    })
+
+
+
+renderPlot({
+  setup_01 <- data.frame(Price = input$Price, Score = input$Score, Followers_n = factor(input$Followers), 
+                         positive_n = factor(input$Positive), Adventure = input$Adventure, Singleplayer = input$Singleplayer,
+                         Story.Rich = input$Story.Rich, Horror = input$Horror, X3D = input$X3D, Survival = input$Survival, 
+                       Choices.Matter = input$Choices.Matter, Historical = input$Historical, Mystery = input$Mystery,
+                       Replay.Value = input$Replay.Value, Early.Access = input$Early.Access,
+                       Female.Protagonist = input$Female.Protagonist, Lovecraftian = input$Lovecraftian, 
+                       Open.World = input$Open.World, Multiplayer = input$Multiplayer, Co.op = input$Co.Op, 
+                       Indie = input$Indie, Atmospheric = input$Atmospheric, Violent = input$Violent,  
+                       Online.Co.Op = input$Online.Co.Op, Third.Person = input$Third.Person, Sandbox = input$Sandbox, 
+                       Strategy = input$Strategy, Difficult = input$Difficult, Gore = input$Gore, 
+                       Soundtrack = input$Soundtrack, Great.Soundtrack = input$Great.Soundtrack, 
+                       Simulation = input$Simulation, RPG = input$RPG, Character.Customization = input$Character.Customization,
+                       Funny = input$Funny, Sci.fi = input$Sci.fi, Exploration = input$Exploration, 
+                       Action = input$Action, Sexual.Content = input$Sexual.Content)
+setup_01[,5:39] = apply(setup_01[,5:39], 2, as.numeric)
+
+ifelse(input$Model== 1,
+        dt <- as.data.frame(cbind("Category"= names(predict(OLM_01, newdata = setup_01, type = "probs")),
+      "Probabilities" = round(predict(OLM_01, newdata = setup_01, type = "probs"),4))),
+      dt <- as.data.frame(cbind("Category" = c("1. Below 1M USD", "2. Above 1M USD"), 
+      "Probabilities" = c(round(1-predict(LOGIT_01, newdata = setup_01, type = "response"),4),
+                          round(predict(LOGIT_01, newdata = setup_01, type = "response"),4)
+                          ))))
+
+dt$Category[dt$Category=="1. Menos de 1M"] = "1. Less than 1M USD"
+dt$Category[dt$Category=="2. Más de 1M y menos de 5M"] = "2. More than 1M USD & \n less than 5M USD"
+dt$Category[dt$Category=="3. Más de 5M y menos de 20M"] = "3. More than 5M USD & \n less than 20M USD"
+dt$Category[dt$Category=="4. Más de 20M"] = "4. More than 20M USD"
+
+dt$Category = factor(dt$Category)
+dt$Probabilities = round(as.numeric(dt$Probabilities),4)
+
+# Graph:
+pb = ggplot(dt, aes(x = Category, y = Probabilities, fill = Category)) 
+
+pb = pb + geom_bar(stat = "identity", show.legend = FALSE)+
+  geom_text(aes(label=scales::percent(Probabilities)), vjust=0)
+
+pb = pb + 
+  theme(plot.title = element_text(size = 28, face = "bold", hjust = 0)) + 
+  theme(plot.subtitle = element_text(size = 22, hjust = 0)) + 
+  theme(plot.caption = element_text(size = 14, hjust = 0)) +
+  theme(plot.margin = unit(c(1,1,1,1), "cm")) +
+  theme_bw() + 
+  theme(axis.title.x = element_text( size = 14, color = "#3C4981")) +
+  theme(axis.text.x = element_text( size = 12, color = "#3C4981")) +
+  theme(axis.title.y = element_text( size = 14, color = "#3C4981")) +
+  theme(axis.text.y = element_text( size = 12, color = "#3C4981")) +
+  scale_y_continuous(labels=scales::percent) +
+  scale_colour_manual(values = 'red') +
+  theme(text = element_text(color = "#3C4981")) +
+  labs(
+    title = "Estimated probabilities",
+    subtitle = "Results considering the selected configuration",
+    caption = "Source: Prepared by Analítica Boutique"
+  ) +
+  xlab("Category")
+
+pb
+}, width = "auto", height = "auto") # Podemos usar 400 u otro numero
+
+
+renderTable({
+  
+  setup_01 <- data.frame(Price = input$Price, Score = input$Score, Followers_n = factor(input$Followers), 
+                         positive_n = factor(input$Positive), Adventure = input$Adventure, Singleplayer = input$Singleplayer,
+                         Story.Rich = input$Story.Rich, Horror = input$Horror, X3D = input$X3D, Survival = input$Survival, 
+                       Choices.Matter = input$Choices.Matter, Historical = input$Historical, Mystery = input$Mystery,
+                       Replay.Value = input$Replay.Value, Early.Access = input$Early.Access,
+                       Female.Protagonist = input$Female.Protagonist, Lovecraftian = input$Lovecraftian, 
+                       Open.World = input$Open.World, Multiplayer = input$Multiplayer, Co.op = input$Co.Op, 
+                       Indie = input$Indie, Atmospheric = input$Atmospheric, Violent = input$Violent,  
+                       Online.Co.Op = input$Online.Co.Op, Third.Person = input$Third.Person, Sandbox = input$Sandbox, 
+                       Strategy = input$Strategy, Difficult = input$Difficult, Gore = input$Gore, 
+                       Soundtrack = input$Soundtrack, Great.Soundtrack = input$Great.Soundtrack, 
+                       Simulation = input$Simulation, RPG = input$RPG, Character.Customization = input$Character.Customization,
+                       Funny = input$Funny, Sci.fi = input$Sci.fi, Exploration = input$Exploration, 
+                       Action = input$Action, Sexual.Content = input$Sexual.Content)
+  
+setup_01[,5:39] = apply(setup_01[,5:39], 2, as.numeric)
+
+
+ifelse(input$Model== 1,
+        dt <- as.data.frame(cbind("Category"= names(predict(OLM_01, newdata = setup_01, type = "probs")),
+      "Probabilities" = round(predict(OLM_01, newdata = setup_01, type = "probs"),4))),
+      dt <- as.data.frame(cbind("Category" = c("2. Above 1M USD", "1. Below 1M USD"), 
+      "Probabilities" = c(round(predict(LOGIT_01, newdata = setup_01, type = "response"),4),
+                          round(1-predict(LOGIT_01, newdata = setup_01, type = "response"),4)))))
+
+dt$Category[dt$Category=="1. Menos de 1M"] = "1. Less than 1M USD"
+dt$Category[dt$Category=="2. Más de 1M y menos de 5M"] = "2. More than 1M USD & less than 5M USD"
+dt$Category[dt$Category=="3. Más de 5M y menos de 20M"] = "3. More than 5M USD & less than 20M USD"
+dt$Category[dt$Category=="4. Más de 20M"] = "4. More than 20M USD"
+
+dt$Category = factor(dt$Category)
+dt$Probabilities =percent(round(as.numeric(dt$Probabilities),4))
+
+dt
+
+})
+
+```

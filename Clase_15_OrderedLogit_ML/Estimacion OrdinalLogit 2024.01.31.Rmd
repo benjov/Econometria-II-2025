@@ -406,9 +406,6 @@ data.frame(predict(OLM_01, newdata = setup_01, type = "class") )
 
 ```
 
-# Modelo FINAL:
-
-### https://benjov.shinyapps.io/Imertual_small/
 
 
 
